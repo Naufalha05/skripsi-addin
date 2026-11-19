@@ -300,11 +300,11 @@ async function perbarui(){
 /* ---------- 5. Nomor halaman (tanpa section break) ---------- */
 const esc = s => s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
 function fld(parts){
-  return '<w:r><w:fldChar w:fldCharType="begin"/></w:r>' +
+  return { xml: '<w:r><w:fldChar w:fldCharType="begin"/></w:r>' +
     parts.map(p => typeof p === "string"
-      ? '<w:r><w:instrText xml:space="preserve">' + esc(p) + '</w:instrText></w:r>' : p).join("") +
+      ? '<w:r><w:instrText xml:space="preserve">' + esc(p) + '</w:instrText></w:r>' : p.xml).join("") +
     '<w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:t>1</w:t></w:r>' +
-    '<w:r><w:fldChar w:fldCharType="end"/></w:r>';
+    '<w:r><w:fldChar w:fldCharType="end"/></w:r>' };
 }
 const pkg = body => '<pkg:package xmlns:pkg="http://schemas.microsoft.com/office/2006/xmlPackage">' +
   '<pkg:part pkg:name="/_rels/.rels" pkg:contentType="application/vnd.openxmlformats-package.relationships+xml"><pkg:xmlData>' +
@@ -323,7 +323,7 @@ async function nomorHalaman(){
                      fld([" = ", page(), " - " + n + " "]), '" ']);
   const luar = $("sampulKosong").checked
     ? fld([" IF ", page(), ' = 1 "" "', dalam, '" ']) : dalam;
-  const xml = '<w:p><w:pPr><w:jc w:val="' + $("posisi").value + '"/></w:pPr>' + luar + '</w:p>';
+  const xml = '<w:p><w:pPr><w:jc w:val="' + $("posisi").value + '"/></w:pPr>' + luar.xml + '</w:p>';
   let jml = 0, catatan = "";
   await Word.run(async ctx => {
     const secs = ctx.document.sections; secs.load("items"); await ctx.sync();
