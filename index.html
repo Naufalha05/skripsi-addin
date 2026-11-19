@@ -68,7 +68,7 @@
 <button onclick="run(pisahBagian)">1. Pisahkan bagian awal dan isi</button>
 <small>Langkah 2: pilih posisi, lalu pasang nomor di footer.</small>
 <select id="posisi"><option value="center">Posisi: tengah</option><option value="right">Posisi: kanan</option><option value="left">Posisi: kiri</option></select>
-<label><input id="sampulKosong" type="checkbox" style="width:auto"> Sampul tanpa nomor (tetap dihitung)</label>
+<label><input id="sampulKosong" type="checkbox" checked style="width:auto"> Sampul dihitung i tapi nomornya tidak ditulis (Kata Pengantar = ii)</label>
 <button onclick="run(nomorHalaman)">2. Pasang nomor halaman</button>
 <small>Langkah 3 dilakukan di Word (format i, ii, iii dan restart angka 1). <a href="#" onclick="bantuan('g-nomor');return false">Lihat caranya</a></small>
 
@@ -100,7 +100,7 @@
 <details id="g-nomor"><summary>5. Nomor halaman (sampul = i, BAB I = 1)</summary>
 <p>Memakai section asli Word, jadi nomor di Daftar Isi otomatis ikut benar (romawi untuk bagian awal, angka untuk isi).</p>
 <ol><li><b>Pisahkan bagian.</b> Kursor di baris judul BAB I, klik tombol 1. Jangan menekan Ctrl+Enter sebelum BAB I, nanti muncul halaman kosong.</li>
-<li><b>Pasang nomor.</b> Pilih posisi (tengah/kanan/kiri), centang "Sampul tanpa nomor" bila perlu, klik tombol 2.</li>
+<li><b>Pasang nomor.</b> Pilih posisi (tengah/kanan/kiri). Kotak "Sampul dihitung i tapi nomornya tidak ditulis" sudah tercentang: sampul tidak menampilkan nomor tapi tetap dihitung, jadi Kata Pengantar = ii. Hilangkan centangnya jika sampul ingin menampilkan i. Lalu klik tombol 2.</li>
 <li><b>Format bagian awal (di Word).</b> Kursor di halaman sampul. Insert &gt; Page Number &gt; Format Page Numbers. Number format: i, ii, iii. Pilih Start at: 1, lalu OK.</li>
 <li><b>Format bagian isi (di Word).</b> Kursor di halaman BAB I. Buka dialog yang sama. Number format: 1, 2, 3. Pilih Start at: 1, lalu OK.</li>
 <li>Klik <b>Perbarui semua daftar &amp; nomor</b>.</li></ol>
@@ -296,11 +296,20 @@ async function daftar(jenis){
 
 async function perbarui(){
   await Word.run(async ctx => {
-    const fields = ctx.document.body.fields;
-    fields.load("items"); await ctx.sync();
-    fields.items.forEach(f => f.updateResult());
-    await ctx.sync();
+    const tipe = f => String(f.type).toLowerCase();
+    const ambil = async () => {
+      const fs = ctx.document.body.fields; fs.load("items/type"); await ctx.sync(); return fs.items;
+    };
+    // 1) nomor judul & caption dulu, 2) field lain, 3) Daftar Isi/Gambar/Tabel paling akhir (dua kali)
+    let items = await ambil();
+    items.filter(f => tipe(f) === "seq").forEach(f => f.updateResult()); await ctx.sync();
+    items.filter(f => tipe(f) !== "seq" && tipe(f) !== "toc").forEach(f => f.updateResult()); await ctx.sync();
+    for (let i = 0; i < 2; i++){
+      items = await ambil();
+      items.filter(f => tipe(f) === "toc").forEach(f => f.updateResult()); await ctx.sync();
+    }
   });
+  return "Semua nomor dan daftar diperbarui.";
 }
 
 /* ---------- 5. Nomor halaman (tanpa section break) ---------- */
@@ -343,8 +352,13 @@ async function nomorHalaman(){
     footers.forEach(f => f.paragraphs.items.forEach(p => { p.alignment = rata; }));
     await ctx.sync();
     if (tanpaSampul){
-      try { secs.items[0].pageSetup.differentFirstPageHeaderFooter = true; await ctx.sync(); }
-      catch(e){ catatan = " Aktifkan 'Different First Page' di Layout > Page Setup > tab Layout agar sampul tanpa nomor."; }
+      const manual = " Sampul masih bernomor? Buka Layout > Page Setup (panah kecil) > tab Layout > centang 'Different first page'.";
+      try {
+        const ps = secs.items[0].pageSetup;
+        ps.differentFirstPageHeaderFooter = true; await ctx.sync();
+        ps.load("differentFirstPageHeaderFooter"); await ctx.sync();
+        if (!ps.differentFirstPageHeaderFooter) catatan = manual;
+      } catch(e){ catatan = manual; }
     }
   });
   return "Nomor dipasang di " + jml + " section. Sekarang atur format tiap bagian di Word (Panduan > Nomor halaman)." + catatan;
