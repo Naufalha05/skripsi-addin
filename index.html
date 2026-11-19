@@ -94,7 +94,7 @@ async function setup(){
 }
 
 /* ---------- 2. Judul ---------- */
-const STY = [Word.Style.heading1, Word.Style.heading2, Word.Style.heading3];
+const STY = ["Heading1", "Heading2", "Heading3"];
 
 function formatJudul(p, level){
   p.styleBuiltIn = STY[level];
@@ -105,32 +105,39 @@ function formatJudul(p, level){
 }
 
 async function heading(level){
+  let catatan = "";
   await Word.run(async ctx => {
     const p = ctx.document.getSelection().paragraphs.getFirst();
     p.load("text"); await ctx.sync();
     formatJudul(p, level);
     if (level === 0) p.insertText(p.text.replace(/\r|\n/g,"").toUpperCase(), "Replace");
     await ctx.sync();
-
-    // penomoran bertingkat: BAB 1 / 1.1 / 1.1.1
-    const saved = Office.context.document.settings.get("taListId");
-    const lists = ctx.document.body.lists; lists.load("items/id");
-    await ctx.sync();
-    const ada = lists.items.find(l => l.id === saved);
-    if (ada){
-      p.attachToList(ada.id, level);
-    } else {
-      const list = p.startNewList(); list.load("id"); await ctx.sync();
-      list.setLevelNumbering(0, Word.ListNumbering.arabic, ["BAB ", 0]);
-      list.setLevelNumbering(1, Word.ListNumbering.arabic, [0, ".", 1]);
-      list.setLevelNumbering(2, Word.ListNumbering.arabic, [0, ".", 1, ".", 2]);
-      await ctx.sync();
-      if (level > 0){ p.attachToList(list.id, level); }
-      Office.context.document.settings.set("taListId", list.id);
-      Office.context.document.settings.saveAsync();
-    }
-    await ctx.sync();
+    try { await nomori(ctx, p, level); }
+    catch(e){ catatan = " Judul sudah diformat, tapi nomor otomatis gagal: " + (e.message || e); }
   });
+  return "Selesai." + catatan;
+}
+
+async function nomori(ctx, p, level){
+  p.listItemOrNullObject.load("isNullObject");
+  const saved = Office.context.document.settings.get("taListId");
+  const lists = ctx.document.body.lists; lists.load("items/id");
+  await ctx.sync();
+  const ada = lists.items.find(l => l.id === saved);
+
+  if (!p.listItemOrNullObject.isNullObject){      // sudah bernomor: cukup ganti level
+    p.listItem.level = level; await ctx.sync(); return;
+  }
+  if (ada){ p.attachToList(ada.id, level); await ctx.sync(); return; }
+
+  const list = p.startNewList(); list.load("id"); await ctx.sync();
+  list.setLevelNumbering(0, "Arabic", ["BAB ", 0]);
+  list.setLevelNumbering(1, "Arabic", [0, ".", 1]);
+  list.setLevelNumbering(2, "Arabic", [0, ".", 1, ".", 2]);
+  await ctx.sync();
+  if (level > 0){ p.listItem.level = level; await ctx.sync(); }
+  Office.context.document.settings.set("taListId", list.id);
+  Office.context.document.settings.saveAsync();
 }
 
 async function judulSetara(){
@@ -150,7 +157,7 @@ async function teksBiasa(){
     const p = ctx.document.getSelection().paragraphs.getFirst();
     p.listItemOrNullObject.load("isNullObject"); await ctx.sync();
     if (!p.listItemOrNullObject.isNullObject) p.detachFromList();
-    p.styleBuiltIn = Word.Style.normal;
+    p.styleBuiltIn = "Normal";
     p.font.name = FONT; p.font.size = 12; p.font.bold = false;
     p.alignment = "Justified"; p.spaceBefore = 0; p.spaceAfter = 0;
     await ctx.sync();
@@ -166,14 +173,14 @@ async function caption(label, bawah){
     let cp = p;
     if (p.text.replace(/[\r\n]/g,"").trim() !== "")
       cp = p.insertParagraph("", bawah ? "After" : "Before");
-    cp.styleBuiltIn = Word.Style.caption;
+    cp.styleBuiltIn = "Caption";
     cp.font.name = FONT; cp.font.size = 11; cp.font.bold = true;
     cp.font.italic = false; cp.font.color = "#000000";
     cp.alignment = label === "Gambar" ? "Centered" : "Left";
     cp.spaceBefore = 6; cp.spaceAfter = 6;
     const awal = cp.insertText(label + " ", "Start");
     const fmt = label === "Lampiran" ? "\\* ALPHABETIC" : "\\* ARABIC";
-    const f = awal.insertField("End", Word.FieldType.seq, label + " " + fmt, true);
+    const f = awal.insertField("End", "Seq", label + " " + fmt, true);
     f.getResult ? f.getResult().insertText(" " + judul, "After") : cp.insertText(" " + judul, "End");
     await ctx.sync();
   });
@@ -186,7 +193,7 @@ async function daftar(jenis){
     const instr = jenis === "toc"
       ? '\\o "1-3" \\h \\z \\u'
       : '\\h \\z \\c "' + jenis + '"';
-    const f = sel.insertField("Replace", Word.FieldType.toc, instr, true);
+    const f = sel.insertField("Replace", "Toc", instr, true);
     await ctx.sync();
     f.updateResult();
     await ctx.sync();
