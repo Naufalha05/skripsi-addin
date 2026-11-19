@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Skripsi Otomatis</title>
+<script src="https://appsforoffice.microsoft.com/lib/1/hosted/office.js"></script>
+<style>
+  body{font-family:Segoe UI,Arial,sans-serif;font-size:13px;margin:0;padding:12px;color:#222}
+  h1{font-size:16px;margin:0 0 8px}
+  h2{font-size:12px;text-transform:uppercase;letter-spacing:.5px;color:#555;margin:16px 0 6px}
+  button{display:block;width:100%;margin:4px 0;padding:8px;border:1px solid #b9b9b9;background:#f7f7f7;border-radius:4px;cursor:pointer;text-align:left;font-size:13px}
+  button:hover{background:#e8f1fb;border-color:#2b79c2}
+  button.main{background:#2b79c2;color:#fff;border-color:#2b79c2}
+  .row{display:flex;gap:6px}.row button{text-align:center}
+  input{width:100%;box-sizing:border-box;padding:6px;margin:4px 0;border:1px solid #b9b9b9;border-radius:4px}
+  #status{margin-top:14px;padding:8px;background:#f1f1f1;border-radius:4px;min-height:18px;font-size:12px}
+  small{color:#666}
+</style>
+</head>
+<body>
+<h1>Skripsi Otomatis</h1>
+
+<h2>1. Pengaturan</h2>
+<button class="main" onclick="run(setup)">Siapkan dokumen (font, spasi, margin)</button>
+
+<h2>2. Judul</h2>
+<button onclick="run(()=>heading(0))">BAB (BAB 1, BAB 2, ...)</button>
+<button onclick="run(()=>heading(1))">Sub-BAB (1.1)</button>
+<button onclick="run(()=>heading(2))">Sub-sub-BAB (1.1.1)</button>
+<button onclick="run(judulSetara)">Judul setara BAB (tanpa nomor)</button>
+<button onclick="run(teksBiasa)">Kembali ke teks biasa</button>
+<small>Letakkan kursor di baris judul, lalu klik tombol.</small>
+
+<h2>3. Caption</h2>
+<input id="capText" placeholder="Judul caption (opsional)">
+<button onclick="run(()=>caption('Gambar',true))">Caption Gambar (di bawah)</button>
+<button onclick="run(()=>caption('Tabel',false))">Caption Tabel (di atas)</button>
+<button onclick="run(()=>caption('Lampiran',false))">Caption Lampiran (A, B, ...)</button>
+<small>Gambar: kursor di baris kosong di bawah gambar. Tabel/Lampiran: kursor di baris kosong di atas tabel.</small>
+
+<h2>4. Daftar otomatis</h2>
+<button onclick="run(()=>daftar('toc'))">Daftar Isi</button>
+<div class="row">
+  <button onclick="run(()=>daftar('Gambar'))">Daftar Gambar</button>
+  <button onclick="run(()=>daftar('Tabel'))">Daftar Tabel</button>
+</div>
+<button onclick="run(()=>daftar('Lampiran'))">Daftar Lampiran</button>
+<button class="main" onclick="run(perbarui)">Perbarui semua daftar &amp; nomor</button>
+
+<h2>5. Nomor halaman</h2>
+<input id="nAwal" type="number" min="1" value="15">
+<small>Jumlah halaman bagian awal (sampul sampai Daftar Rumus). Sampul tanpa nomor, halaman berikutnya Romawi, lalu BAB 1 mulai dari 1.</small>
+<button onclick="run(nomorHalaman)">Pasang nomor halaman</button>
+
+<div id="status">Siap.</div>
+
+<script>
+const FONT = "Times New Roman";
+const $ = id => document.getElementById(id);
+const say = t => { $("status").textContent = t; };
+
+Office.onReady(info => {
+  if (info.host !== Office.HostType.Word) say("Add-in ini hanya untuk Word.");
+});
+
+async function run(fn){
+  try { say("Memproses..."); const msg = await fn(); say(msg || "Selesai."); }
+  catch(e){ say("Gagal: " + (e.message || e)); console.error(e); }
+}
+
+/* ---------- 1. Pengaturan ---------- */
+async function setup(){
+  let catatan = "";
+  await Word.run(async ctx => {
+    const st = ctx.document.getStyles().getByNameOrNullObject("Normal");
+    st.load("isNullObject");
+    await ctx.sync();
+    if (!st.isNullObject){
+      st.font.name = FONT; st.font.size = 12;
+      st.paragraphFormat.alignment = "Justified";
+      st.paragraphFormat.lineSpacing = 18;   // 1,5 spasi
+      st.paragraphFormat.spaceAfter = 0;
+    }
+    await ctx.sync();
+    try {
+      const ps = ctx.document.sections.getFirst().pageSetup;
+      ps.leftMargin = 113.4; ps.topMargin = 85.05;   // 4 cm, 3 cm
+      ps.rightMargin = 85.05; ps.bottomMargin = 85.05;
+      await ctx.sync();
+    } catch(e){ catatan = " Margin belum bisa diatur otomatis di versi Word ini, atur manual (4-3-3-3 cm)."; }
+  });
+  return "Dokumen disiapkan." + catatan;
+}
+
+/* ---------- 2. Judul ---------- */
+const STY = [Word.Style.heading1, Word.Style.heading2, Word.Style.heading3];
+
+function formatJudul(p, level){
+  p.styleBuiltIn = STY[level];
+  p.font.name = FONT; p.font.bold = true; p.font.italic = false;
+  p.font.color = "#000000"; p.font.size = level === 0 ? 14 : 12;
+  p.alignment = level === 0 ? "Centered" : "Left";
+  p.spaceBefore = 12; p.spaceAfter = 12;
+}
+
+async function heading(level){
+  await Word.run(async ctx => {
+    const p = ctx.document.getSelection().paragraphs.getFirst();
+    p.load("text"); await ctx.sync();
+    formatJudul(p, level);
+    if (level === 0) p.insertText(p.text.replace(/\r|\n/g,"").toUpperCase(), "Replace");
+    await ctx.sync();
+
+    // penomoran bertingkat: BAB 1 / 1.1 / 1.1.1
+    const saved = Office.context.document.settings.get("taListId");
+    const lists = ctx.document.body.lists; lists.load("items/id");
+    await ctx.sync();
+    const ada = lists.items.find(l => l.id === saved);
+    if (ada){
+      p.attachToList(ada.id, level);
+    } else {
+      const list = p.startNewList(); list.load("id"); await ctx.sync();
+      list.setLevelNumbering(0, Word.ListNumbering.arabic, ["BAB ", 0]);
+      list.setLevelNumbering(1, Word.ListNumbering.arabic, [0, ".", 1]);
+      list.setLevelNumbering(2, Word.ListNumbering.arabic, [0, ".", 1, ".", 2]);
+      await ctx.sync();
+      if (level > 0){ p.attachToList(list.id, level); }
+      Office.context.document.settings.set("taListId", list.id);
+      Office.context.document.settings.saveAsync();
+    }
+    await ctx.sync();
+  });
+}
+
+async function judulSetara(){
+  await Word.run(async ctx => {
+    const p = ctx.document.getSelection().paragraphs.getFirst();
+    p.load("text"); p.listItemOrNullObject.load("isNullObject");
+    await ctx.sync();
+    if (!p.listItemOrNullObject.isNullObject) p.detachFromList();
+    formatJudul(p, 0);
+    p.insertText(p.text.replace(/\r|\n/g,"").toUpperCase(), "Replace");
+    await ctx.sync();
+  });
+}
+
+async function teksBiasa(){
+  await Word.run(async ctx => {
+    const p = ctx.document.getSelection().paragraphs.getFirst();
+    p.listItemOrNullObject.load("isNullObject"); await ctx.sync();
+    if (!p.listItemOrNullObject.isNullObject) p.detachFromList();
+    p.styleBuiltIn = Word.Style.normal;
+    p.font.name = FONT; p.font.size = 12; p.font.bold = false;
+    p.alignment = "Justified"; p.spaceBefore = 0; p.spaceAfter = 0;
+    await ctx.sync();
+  });
+}
+
+/* ---------- 3. Caption ---------- */
+async function caption(label, bawah){
+  const judul = $("capText").value.trim();
+  await Word.run(async ctx => {
+    const p = ctx.document.getSelection().paragraphs.getFirst();
+    p.load("text"); await ctx.sync();
+    let cp = p;
+    if (p.text.replace(/[\r\n]/g,"").trim() !== "")
+      cp = p.insertParagraph("", bawah ? "After" : "Before");
+    cp.styleBuiltIn = Word.Style.caption;
+    cp.font.name = FONT; cp.font.size = 11; cp.font.bold = true;
+    cp.font.italic = false; cp.font.color = "#000000";
+    cp.alignment = label === "Gambar" ? "Centered" : "Left";
+    cp.spaceBefore = 6; cp.spaceAfter = 6;
+    const awal = cp.insertText(label + " ", "Start");
+    const fmt = label === "Lampiran" ? "\\* ALPHABETIC" : "\\* ARABIC";
+    const f = awal.insertField("End", Word.FieldType.seq, label + " " + fmt, true);
+    f.getResult ? f.getResult().insertText(" " + judul, "After") : cp.insertText(" " + judul, "End");
+    await ctx.sync();
+  });
+}
+
+/* ---------- 4. Daftar ---------- */
+async function daftar(jenis){
+  await Word.run(async ctx => {
+    const sel = ctx.document.getSelection();
+    const instr = jenis === "toc"
+      ? '\\o "1-3" \\h \\z \\u'
+      : '\\h \\z \\c "' + jenis + '"';
+    const f = sel.insertField("Replace", Word.FieldType.toc, instr, true);
+    await ctx.sync();
+    f.updateResult();
+    await ctx.sync();
+  });
+}
+
+async function perbarui(){
+  await Word.run(async ctx => {
+    const fields = ctx.document.body.fields;
+    fields.load("items"); await ctx.sync();
+    fields.items.forEach(f => f.updateResult());
+    await ctx.sync();
+  });
+}
+
+/* ---------- 5. Nomor halaman (tanpa section break) ---------- */
+const esc = s => s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+function fld(parts){
+  return '<w:r><w:fldChar w:fldCharType="begin"/></w:r>' +
+    parts.map(p => typeof p === "string"
+      ? '<w:r><w:instrText xml:space="preserve">' + esc(p) + '</w:instrText></w:r>' : p).join("") +
+    '<w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:t>1</w:t></w:r>' +
+    '<w:r><w:fldChar w:fldCharType="end"/></w:r>';
+}
+const pkg = body => '<pkg:package xmlns:pkg="http://schemas.microsoft.com/office/2006/xmlPackage">' +
+  '<pkg:part pkg:name="/_rels/.rels" pkg:contentType="application/vnd.openxmlformats-package.relationships+xml"><pkg:xmlData>' +
+  '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" ' +
+  'Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>' +
+  '</pkg:xmlData></pkg:part><pkg:part pkg:name="/word/document.xml" ' +
+  'pkg:contentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"><pkg:xmlData>' +
+  '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>' + body +
+  '</w:body></w:document></pkg:xmlData></pkg:part></pkg:package>';
+
+async function nomorHalaman(){
+  const n = parseInt($("nAwal").value, 10);
+  if (!n || n < 1) throw new Error("Isi jumlah halaman bagian awal.");
+  const page = () => fld([" PAGE "]);
+  const dalam = fld([" IF ", page(), " <= " + n + ' "', fld([" PAGE \\* roman "]), '" "',
+                     fld([" = ", page(), " - " + n + " "]), '" ']);
+  const luar = fld([" IF ", page(), ' = 1 "" "', dalam, '" ']);
+  const xml = '<w:p><w:pPr><w:jc w:val="center"/></w:pPr>' + luar + '</w:p>';
+  await Word.run(async ctx => {
+    const footer = ctx.document.sections.getFirst().getFooter("Primary");
+    footer.insertOoxml(pkg(xml), "Replace");
+    await ctx.sync();
+  });
+  return "Nomor halaman dipasang. Jika tampil '1' semua, klik kanan nomor halaman > Update Field.";
+}
+</script>
+</body>
+</html>
