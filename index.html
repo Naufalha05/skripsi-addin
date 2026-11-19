@@ -25,12 +25,13 @@
 <button class="main" onclick="run(setup)">Siapkan dokumen (font, spasi, margin)</button>
 
 <h2>2. Judul</h2>
-<button onclick="run(()=>heading(0))">BAB (BAB 1, BAB 2, ...)</button>
+<button onclick="run(()=>heading(0))">BAB (BAB I, BAB II, ...)</button>
 <button onclick="run(()=>heading(1))">Sub-BAB (1.1)</button>
 <button onclick="run(()=>heading(2))">Sub-sub-BAB (1.1.1)</button>
 <button onclick="run(judulSetara)">Judul setara BAB (tanpa nomor)</button>
 <button onclick="run(teksBiasa)">Kembali ke teks biasa</button>
-<small>Letakkan kursor di baris judul, lalu klik tombol.</small>
+<label><input id="bab2baris" type="checkbox" checked style="width:auto"> Judul BAB di baris baru (BAB I / PENDAHULUAN)</label><br>
+<small>Ketik judulnya dulu (misal: Pendahuluan), kursor di baris itu, lalu klik tombol. Nomor dibuat otomatis.</small>
 
 <h2>3. Caption</h2>
 <input id="capText" placeholder="Judul caption (opsional)">
@@ -50,7 +51,8 @@
 
 <h2>5. Nomor halaman</h2>
 <input id="nAwal" type="number" min="1" value="15">
-<small>Jumlah halaman bagian awal (sampul sampai Daftar Rumus). Sampul tanpa nomor, halaman berikutnya Romawi, lalu BAB 1 mulai dari 1.</small>
+<small>Jumlah halaman bagian awal (sampul sampai Daftar Rumus). Sampul = i, halaman berikutnya Romawi, lalu BAB I mulai dari 1.</small>
+<label><input id="sampulKosong" type="checkbox" style="width:auto"> Sampul tanpa nomor (tapi tetap dihitung)</label>
 <button onclick="run(nomorHalaman)">Pasang nomor halaman</button>
 
 <div id="status">Siap.</div>
@@ -102,42 +104,63 @@ function formatJudul(p, level){
   p.font.color = "#000000"; p.font.size = level === 0 ? 14 : 12;
   p.alignment = level === 0 ? "Centered" : "Left";
   p.spaceBefore = 12; p.spaceAfter = 12;
+  const tab = [0, 36, 45][level];
+  p.leftIndent = tab; p.firstLineIndent = -tab;
 }
 
+function bersihkan(t){
+  t = t.replace(/[\r\n]/g, "");
+  t = t.replace(/^\s*BAB\s+[IVXLCDM\d]+[\s\u000b]*/i, "");
+  t = t.replace(/^\s*\d+(\.\d+)+[\s\t]*/, "");
+  return t.replace(/\u000b/g, " ").trim();
+}
+
+async function updateSeq(ctx){
+  const fs = ctx.document.body.fields;
+  fs.load("items/type"); await ctx.sync();
+  fs.items.filter(f => f.type === "Seq").forEach(f => f.updateResult());
+  await ctx.sync();
+}
+
+/* Penomoran memakai field SEQ (bukan list):
+   BAB   -> BAB {SEQ Bab \* ROMAN}
+   1.1   -> {SEQ Bab \c}.{SEQ Sub \s 1}
+   1.1.1 -> {SEQ Bab \c}.{SEQ Sub \c}.{SEQ Subsub \s 2} */
 async function heading(level){
-  let catatan = "";
+  const baris = $("bab2baris").checked;
   await Word.run(async ctx => {
     const p = ctx.document.getSelection().paragraphs.getFirst();
-    p.load("text"); await ctx.sync();
-    formatJudul(p, level);
-    if (level === 0) p.insertText(p.text.replace(/\r|\n/g,"").toUpperCase(), "Replace");
+    p.load("text"); p.listItemOrNullObject.load("isNullObject");
     await ctx.sync();
-    try { await nomori(ctx, p, level); }
-    catch(e){ catatan = " Judul sudah diformat, tapi nomor otomatis gagal: " + (e.message || e); }
+    if (!p.listItemOrNullObject.isNullObject) p.detachFromList();
+    const judul = bersihkan(p.text);
+
+    formatJudul(p, level);
+    p.insertText(level === 0 ? judul.toUpperCase() : judul, "Replace");
+    await ctx.sync();
+
+    const awal = () => p.getRange("Start");
+    if (level === 0){
+      if (baris) awal().insertBreak("Line", "Before"); else awal().insertText(" ", "Start");
+      awal().insertField("Start", "Seq", "Bab \\* ROMAN", true);
+      awal().insertText("BAB ", "Start");
+    } else if (level === 1){
+      awal().insertText("\t", "Start");
+      awal().insertField("Start", "Seq", "Sub \\s 1 \\* ARABIC", true);
+      awal().insertText(".", "Start");
+      awal().insertField("Start", "Seq", "Bab \\c \\* ARABIC", true);
+    } else {
+      awal().insertText("\t", "Start");
+      awal().insertField("Start", "Seq", "Subsub \\s 2 \\* ARABIC", true);
+      awal().insertText(".", "Start");
+      awal().insertField("Start", "Seq", "Sub \\c \\* ARABIC", true);
+      awal().insertText(".", "Start");
+      awal().insertField("Start", "Seq", "Bab \\c \\* ARABIC", true);
+    }
+    formatJudul(p, level);
+    await ctx.sync();
+    await updateSeq(ctx);
   });
-  return "Selesai." + catatan;
-}
-
-async function nomori(ctx, p, level){
-  p.listItemOrNullObject.load("isNullObject");
-  const saved = Office.context.document.settings.get("taListId");
-  const lists = ctx.document.body.lists; lists.load("items/id");
-  await ctx.sync();
-  const ada = lists.items.find(l => l.id === saved);
-
-  if (!p.listItemOrNullObject.isNullObject){      // sudah bernomor: cukup ganti level
-    p.listItem.level = level; await ctx.sync(); return;
-  }
-  if (ada){ p.attachToList(ada.id, level); await ctx.sync(); return; }
-
-  const list = p.startNewList(); list.load("id"); await ctx.sync();
-  list.setLevelNumbering(0, "Arabic", ["BAB ", 0]);
-  list.setLevelNumbering(1, "Arabic", [0, ".", 1]);
-  list.setLevelNumbering(2, "Arabic", [0, ".", 1, ".", 2]);
-  await ctx.sync();
-  if (level > 0){ p.listItem.level = level; await ctx.sync(); }
-  Office.context.document.settings.set("taListId", list.id);
-  Office.context.document.settings.saveAsync();
 }
 
 async function judulSetara(){
@@ -147,8 +170,9 @@ async function judulSetara(){
     await ctx.sync();
     if (!p.listItemOrNullObject.isNullObject) p.detachFromList();
     formatJudul(p, 0);
-    p.insertText(p.text.replace(/\r|\n/g,"").toUpperCase(), "Replace");
+    p.insertText(bersihkan(p.text).toUpperCase(), "Replace");
     await ctx.sync();
+    await updateSeq(ctx);
   });
 }
 
@@ -159,7 +183,7 @@ async function teksBiasa(){
     if (!p.listItemOrNullObject.isNullObject) p.detachFromList();
     p.styleBuiltIn = "Normal";
     p.font.name = FONT; p.font.size = 12; p.font.bold = false;
-    p.alignment = "Justified"; p.spaceBefore = 0; p.spaceAfter = 0;
+    p.alignment = "Justified"; p.spaceBefore = 0; p.spaceAfter = 0; p.leftIndent = 0; p.firstLineIndent = 0;
     await ctx.sync();
   });
 }
@@ -233,7 +257,8 @@ async function nomorHalaman(){
   const page = () => fld([" PAGE "]);
   const dalam = fld([" IF ", page(), " <= " + n + ' "', fld([" PAGE \\* roman "]), '" "',
                      fld([" = ", page(), " - " + n + " "]), '" ']);
-  const luar = fld([" IF ", page(), ' = 1 "" "', dalam, '" ']);
+  const luar = $("sampulKosong").checked
+    ? fld([" IF ", page(), ' = 1 "" "', dalam, '" ']) : dalam;
   const xml = '<w:p><w:pPr><w:jc w:val="center"/></w:pPr>' + luar + '</w:p>';
   await Word.run(async ctx => {
     const footer = ctx.document.sections.getFirst().getFooter("Primary");
