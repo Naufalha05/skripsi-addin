@@ -64,11 +64,13 @@
 <button class="main" onclick="run(perbarui)">Perbarui semua daftar &amp; nomor</button>
 
 <h2>5. Nomor halaman <a href="#" onclick="bantuan('g-nomor');return false" title="Petunjuk">?</a></h2>
-<input id="nAwal" type="number" min="1" value="15">
-<small>Jumlah halaman bagian awal (sampul sampai Daftar Rumus). Sampul = i, halaman berikutnya Romawi, lalu BAB I mulai dari 1.</small>
-<label><input id="sampulKosong" type="checkbox" style="width:auto"> Sampul tanpa nomor (tapi tetap dihitung)</label>
+<small>Langkah 1: taruh kursor di baris judul BAB I (awal isi), lalu klik tombol ini.</small>
+<button onclick="run(pisahBagian)">1. Pisahkan bagian awal dan isi</button>
+<small>Langkah 2: pilih posisi, lalu pasang nomor di footer.</small>
 <select id="posisi"><option value="center">Posisi: tengah</option><option value="right">Posisi: kanan</option><option value="left">Posisi: kiri</option></select>
-<button onclick="run(nomorHalaman)">Pasang nomor halaman</button>
+<label><input id="sampulKosong" type="checkbox" style="width:auto"> Sampul tanpa nomor (tetap dihitung)</label>
+<button onclick="run(nomorHalaman)">2. Pasang nomor halaman</button>
+<small>Langkah 3 dilakukan di Word (format i, ii, iii dan restart angka 1). <a href="#" onclick="bantuan('g-nomor');return false">Lihat caranya</a></small>
 
 <div id="status">Siap.</div>
 </div>
@@ -93,16 +95,20 @@
 <details id="g-daftar"><summary>4. Daftar Isi, Gambar, Tabel, Lampiran</summary>
 <ol><li>Pastikan judul dan caption sudah dibuat dengan tombol di atas.</li>
 <li>Taruh kursor di baris kosong pada halaman daftarnya, lalu klik tombol daftar yang sesuai.</li>
-<li>Setelah menambah atau mengubah judul, caption, atau urutan, klik <b>Perbarui semua daftar &amp; nomor</b>.</li></ol></details>
-<details id="g-nomor"><summary>5. Nomor halaman</summary>
-<ol><li>Isi jumlah halaman bagian awal, dari sampul sampai Daftar Rumus (misal 15).</li>
-<li>Pilih posisi: tengah, kanan, atau kiri.</li>
-<li>Centang <b>Sampul tanpa nomor</b> jika sampul tidak ingin diberi nomor (tetap dihitung).</li>
-<li>Klik <b>Pasang nomor halaman</b>. Sampul = i, bagian awal Romawi, BAB I = 1.</li></ol>
-<p>Jika semua halaman tampil nomor yang sama: klik di area footer, tekan Ctrl+A, lalu F9. Jika halaman bagian awal bertambah, ubah angkanya dan klik tombolnya lagi.</p></details>
+<li>Setelah menambah atau mengubah judul, caption, atau urutan, klik <b>Perbarui semua daftar &amp; nomor</b>.</li></ol>
+<p>Daftar Isi buatan versi lama: hapus dulu, lalu sisipkan lagi dengan tombol ini.</p></details>
+<details id="g-nomor"><summary>5. Nomor halaman (sampul = i, BAB I = 1)</summary>
+<p>Memakai section asli Word, jadi nomor di Daftar Isi otomatis ikut benar (romawi untuk bagian awal, angka untuk isi).</p>
+<ol><li><b>Pisahkan bagian.</b> Kursor di baris judul BAB I, klik tombol 1. Jangan menekan Ctrl+Enter sebelum BAB I, nanti muncul halaman kosong.</li>
+<li><b>Pasang nomor.</b> Pilih posisi (tengah/kanan/kiri), centang "Sampul tanpa nomor" bila perlu, klik tombol 2.</li>
+<li><b>Format bagian awal (di Word).</b> Kursor di halaman sampul. Insert &gt; Page Number &gt; Format Page Numbers. Number format: i, ii, iii. Pilih Start at: 1, lalu OK.</li>
+<li><b>Format bagian isi (di Word).</b> Kursor di halaman BAB I. Buka dialog yang sama. Number format: 1, 2, 3. Pilih Start at: 1, lalu OK.</li>
+<li>Klik <b>Perbarui semua daftar &amp; nomor</b>.</li></ol>
+<p>Langkah 3 dan 4 hanya bisa dilakukan lewat Word, add-in tidak punya akses ke pengaturan itu.</p></details>
 <details id="g-faq"><summary>Masalah umum</summary>
 <ul><li><b>Sub-BAB tampil 0.1</b>: belum ada judul tingkat 1 di atasnya. Klik <b>BAB</b> di judul induknya dulu (pilih gaya "1 (angka saja)" jika tidak memakai kata BAB), isi "Mulai dari nomor" bila perlu, lalu klik <b>Perbarui</b>.</li>
 <li><b>Tombol tidak bereaksi</b>: baca kotak abu-abu di bagian bawah tab Alat, pesan errornya ada di sana.</li>
+<li><b>Sampul ikut masuk Daftar Isi</b>: sorot judul sampul, klik <b>Kembali ke teks biasa</b>, hapus Daftar Isi lama, lalu sisipkan lagi.</li>
 <li><b>Judul tidak masuk Daftar Isi</b>: judul harus dibuat lewat tombol di tab Alat, lalu klik Perbarui.</li>
 <li><b>Ikon tidak berubah</b>: tutup Word, hapus isi folder <code>%LOCALAPPDATA%\Microsoft\Office\16.0\Wef</code>, buka Word lagi.</li></ul></details>
 </div>
@@ -279,7 +285,7 @@ async function daftar(jenis){
   await Word.run(async ctx => {
     const sel = ctx.document.getSelection();
     const instr = jenis === "toc"
-      ? '\\o "1-3" \\h \\z \\u'
+      ? '\\o "1-3" \\h \\z'
       : '\\h \\z \\c "' + jenis + '"';
     const f = sel.insertField("Replace", "Toc", instr, true);
     await ctx.sync();
@@ -298,14 +304,6 @@ async function perbarui(){
 }
 
 /* ---------- 5. Nomor halaman (tanpa section break) ---------- */
-const esc = s => s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
-function fld(parts){
-  return { xml: '<w:r><w:fldChar w:fldCharType="begin"/></w:r>' +
-    parts.map(p => typeof p === "string"
-      ? '<w:r><w:instrText xml:space="preserve">' + esc(p) + '</w:instrText></w:r>' : p.xml).join("") +
-    '<w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:t>1</w:t></w:r>' +
-    '<w:r><w:fldChar w:fldCharType="end"/></w:r>' };
-}
 const pkg = body => '<pkg:package xmlns:pkg="http://schemas.microsoft.com/office/2006/xmlPackage">' +
   '<pkg:part pkg:name="/_rels/.rels" pkg:contentType="application/vnd.openxmlformats-package.relationships+xml"><pkg:xmlData>' +
   '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" ' +
@@ -315,29 +313,41 @@ const pkg = body => '<pkg:package xmlns:pkg="http://schemas.microsoft.com/office
   '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>' + body +
   '</w:body></w:document></pkg:xmlData></pkg:part></pkg:package>';
 
+async function pisahBagian(){
+  await Word.run(async ctx => {
+    const p = ctx.document.getSelection().paragraphs.getFirst();
+    p.getRange("Start").insertBreak("SectionNext", "Before");
+    await ctx.sync();
+  });
+  return "Section break disisipkan sebelum baris ini. Lanjut ke langkah 2.";
+}
+
 async function nomorHalaman(){
-  const n = parseInt($("nAwal").value, 10);
-  if (!n || n < 1) throw new Error("Isi jumlah halaman bagian awal.");
-  const page = () => fld([" PAGE "]);
-  const dalam = fld([" IF ", page(), " <= " + n + ' "', fld([" PAGE \\* roman "]), '" "',
-                     fld([" = ", page(), " - " + n + " "]), '" ']);
-  const luar = $("sampulKosong").checked
-    ? fld([" IF ", page(), ' = 1 "" "', dalam, '" ']) : dalam;
-  const xml = '<w:p><w:pPr><w:jc w:val="' + $("posisi").value + '"/></w:pPr>' + luar.xml + '</w:p>';
+  const pos = $("posisi").value, tanpaSampul = $("sampulKosong").checked;
+  const rata = { center: "Centered", right: "Right", left: "Left" }[pos];
+  const xml = '<w:p><w:pPr><w:jc w:val="' + pos + '"/></w:pPr>' +
+              '<w:fldSimple w:instr=" PAGE "><w:r><w:t>1</w:t></w:r></w:fldSimple></w:p>';
   let jml = 0, catatan = "";
   await Word.run(async ctx => {
     const secs = ctx.document.sections; secs.load("items"); await ctx.sync();
     jml = secs.items.length;
-    secs.items.forEach(sec => sec.getFooter("Primary").insertOoxml(pkg(xml), "Replace"));
+    const footers = [];
+    secs.items.forEach((sec, i) => ["Primary", "FirstPage", "EvenPages"].forEach(tipe => {
+      const f = sec.getFooter(tipe);
+      if (i === 0 && tipe === "FirstPage" && tanpaSampul) { f.clear(); return; }
+      f.insertOoxml(pkg(xml), "Replace");
+      footers.push(f);
+    }));
     await ctx.sync();
-    try {   // paksa Word menghitung ulang agar tiap halaman berbeda
-      for (const sec of secs.items){
-        const fs = sec.getFooter("Primary").fields; fs.load("items"); await ctx.sync();
-        fs.items.forEach(f => f.updateResult()); await ctx.sync();
-      }
-    } catch(e){ catatan = " Jika semua halaman sama: klik footer, Ctrl+A, lalu F9."; }
+    footers.forEach(f => f.paragraphs.load("items")); await ctx.sync();
+    footers.forEach(f => f.paragraphs.items.forEach(p => { p.alignment = rata; }));
+    await ctx.sync();
+    if (tanpaSampul){
+      try { secs.items[0].pageSetup.differentFirstPageHeaderFooter = true; await ctx.sync(); }
+      catch(e){ catatan = " Aktifkan 'Different First Page' di Layout > Page Setup > tab Layout agar sampul tanpa nomor."; }
+    }
   });
-  return "Nomor halaman dipasang di " + jml + " section." + catatan;
+  return "Nomor dipasang di " + jml + " section. Sekarang atur format tiap bagian di Word (Panduan > Nomor halaman)." + catatan;
 }
 
 /* ---------- Tab & bantuan ---------- */
